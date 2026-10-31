@@ -1864,6 +1864,15 @@ export type ProjectListInput = { readonly archived?: boolean | undefined }
 export type ProjectListOutput = ReadonlyArray<Project.Info>
 export type ProjectListOperation<E = never> = (input?: ProjectListInput) => Effect.Effect<ProjectListOutput, E>
 
+export type ProjectCreateInput = {
+  readonly name: string
+  readonly directory: AbsolutePath
+  readonly commands?: Project.Commands | undefined
+  readonly icon?: Project.Icon | undefined
+}
+export type ProjectCreateOutput = Project.Info
+export type ProjectCreateOperation<E = never> = (input: ProjectCreateInput) => Effect.Effect<ProjectCreateOutput, E>
+
 export type ProjectUpdateInput = {
   readonly projectID: Project.ID
   readonly canonical?: AbsolutePath | undefined
@@ -1874,9 +1883,596 @@ export type ProjectUpdateInput = {
 export type ProjectUpdateOutput = Project.Info
 export type ProjectUpdateOperation<E = never> = (input: ProjectUpdateInput) => Effect.Effect<ProjectUpdateOutput, E>
 
+export type ProjectDeleteInput = { readonly projectID: Project.ID }
+export type ProjectDeleteOutput = boolean
+export type ProjectDeleteOperation<E = never> = (input: ProjectDeleteInput) => Effect.Effect<ProjectDeleteOutput, E>
+
+export type ProjectFoldersListInput = { readonly projectID: Project.ID }
+export type ProjectFoldersListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly projectID: Project.ID
+  readonly path: AbsolutePath
+  readonly name: string
+  readonly isPrimary: boolean
+  readonly drive?: string | undefined
+  readonly vcs?: string | undefined
+  readonly status: "active" | "missing" | "unreadable"
+  readonly addedAt: number
+}>
+export type ProjectFoldersListOperation<E = never> = (
+  input: ProjectFoldersListInput,
+) => Effect.Effect<ProjectFoldersListOutput, E>
+
+export type ProjectFoldersAddInput = {
+  readonly projectID: Project.ID
+  readonly directory: AbsolutePath
+  readonly name?: string | undefined
+  readonly isPrimary?: boolean | undefined
+}
+export type ProjectFoldersAddOutput = {
+  readonly id: string
+  readonly projectID: Project.ID
+  readonly path: AbsolutePath
+  readonly name: string
+  readonly isPrimary: boolean
+  readonly drive?: string | undefined
+  readonly vcs?: string | undefined
+  readonly status: "active" | "missing" | "unreadable"
+  readonly addedAt: number
+}
+export type ProjectFoldersAddOperation<E = never> = (
+  input: ProjectFoldersAddInput,
+) => Effect.Effect<ProjectFoldersAddOutput, E>
+
+export type ProjectFoldersRemoveInput = { readonly projectID: Project.ID; readonly directory: AbsolutePath }
+export type ProjectFoldersRemoveOutput = boolean
+export type ProjectFoldersRemoveOperation<E = never> = (
+  input: ProjectFoldersRemoveInput,
+) => Effect.Effect<ProjectFoldersRemoveOutput, E>
+
+export type ProjectAttachmentsListInput = { readonly projectID: Project.ID }
+export type ProjectAttachmentsListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly projectID: Project.ID
+  readonly name: string
+  readonly originalPath: string
+  readonly storagePath: string
+  readonly mimeType: string
+  readonly category: "source" | "document" | "data" | "image" | "archive" | "other"
+  readonly size: number
+  readonly createdAt: number
+  readonly updatedAt: number
+  readonly indexed: boolean
+  readonly extractedSummary?: string | undefined
+  readonly metadata: { readonly [x: string]: unknown }
+}>
+export type ProjectAttachmentsListOperation<E = never> = (
+  input: ProjectAttachmentsListInput,
+) => Effect.Effect<ProjectAttachmentsListOutput, E>
+
+export type ProjectAttachmentsAddInput = {
+  readonly projectID: Project.ID
+  readonly name: string
+  readonly filePath: string
+  readonly mimeType?: string | undefined
+}
+export type ProjectAttachmentsAddOutput = {
+  readonly id: string
+  readonly projectID: Project.ID
+  readonly name: string
+  readonly originalPath: string
+  readonly storagePath: string
+  readonly mimeType: string
+  readonly category: "source" | "document" | "data" | "image" | "archive" | "other"
+  readonly size: number
+  readonly createdAt: number
+  readonly updatedAt: number
+  readonly indexed: boolean
+  readonly extractedSummary?: string | undefined
+  readonly metadata: { readonly [x: string]: unknown }
+}
+export type ProjectAttachmentsAddOperation<E = never> = (
+  input: ProjectAttachmentsAddInput,
+) => Effect.Effect<ProjectAttachmentsAddOutput, E>
+
+export type ProjectConversationsListInput = { readonly projectID: Project.ID }
+export type ProjectConversationsListOutput = ReadonlyArray<{
+  readonly sessionID: Session.ID
+  readonly projectID: Project.ID
+  readonly title: string
+  readonly createdAt: number
+  readonly updatedAt: number
+  readonly messageCount: number
+  readonly status: "active" | "archived"
+}>
+export type ProjectConversationsListOperation<E = never> = (
+  input: ProjectConversationsListInput,
+) => Effect.Effect<ProjectConversationsListOutput, E>
+
 export interface ProjectApi<E = never> {
   readonly list: ProjectListOperation<E>
+  readonly create: ProjectCreateOperation<E>
   readonly update: ProjectUpdateOperation<E>
+  readonly delete: ProjectDeleteOperation<E>
+  readonly folders: {
+    readonly list: ProjectFoldersListOperation<E>
+    readonly add: ProjectFoldersAddOperation<E>
+    readonly remove: ProjectFoldersRemoveOperation<E>
+  }
+  readonly attachments: {
+    readonly list: ProjectAttachmentsListOperation<E>
+    readonly add: ProjectAttachmentsAddOperation<E>
+  }
+  readonly conversations: { readonly list: ProjectConversationsListOperation<E> }
+}
+
+export type ServerExtensionListOutput = ReadonlyArray<{
+  readonly id: string
+  readonly name: string
+  readonly version: string
+  readonly category: "skill" | "mcp" | "rule" | "plugin"
+  readonly originPlatform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+  readonly source: {
+    readonly type: "git" | "local" | "archive" | "builtin"
+    readonly location: string
+    readonly subpath?: string | undefined
+    readonly ref?: string | undefined
+    readonly checksum?: string | undefined
+  }
+  readonly scope: "global" | "project"
+  readonly description?: string | undefined
+  readonly author?: string | undefined
+  readonly license?: string | undefined
+  readonly homepage?: string | undefined
+  readonly permissions: {
+    readonly filesystem?: ReadonlyArray<string> | undefined
+    readonly network?: ReadonlyArray<string> | undefined
+    readonly commands?: ReadonlyArray<string> | undefined
+    readonly environment?: ReadonlyArray<string> | undefined
+  }
+  readonly status:
+    | "installed"
+    | "enabled"
+    | "disabled"
+    | "failed"
+    | "needs_auth"
+    | "adapted"
+    | "incompatible"
+    | "quarantined"
+  readonly enabled: boolean
+  readonly executionMode?: ("native" | "adapted" | "shim" | "sandboxed") | undefined
+  readonly packageId?: string | undefined
+  readonly entrypoints?: ReadonlyArray<string> | undefined
+  readonly dependencies?: ReadonlyArray<string> | undefined
+  readonly requiredApis?: ReadonlyArray<string> | undefined
+  readonly hooks?: ReadonlyArray<string> | undefined
+  readonly supportingResources?: ReadonlyArray<string> | undefined
+  readonly adapterVersion?: string | undefined
+  readonly tools?:
+    | ReadonlyArray<{
+        readonly name: string
+        readonly description?: string | undefined
+        readonly parameters?: { readonly [x: string]: unknown } | undefined
+      }>
+    | undefined
+  readonly security?:
+    | {
+        readonly safe: boolean
+        readonly riskLevel: "low" | "medium" | "high" | "critical"
+        readonly findings: ReadonlyArray<{
+          readonly severity: "info" | "warning" | "error" | "critical"
+          readonly code: string
+          readonly message: string
+          readonly file?: string | undefined
+          readonly line?: number | undefined
+        }>
+        readonly scannedFiles: number
+        readonly timestamp: number
+      }
+    | undefined
+  readonly metadata: { readonly [x: string]: unknown }
+  readonly error?: string | undefined
+}>
+export type ServerExtensionListOperation<E = never> = () => Effect.Effect<ServerExtensionListOutput, E>
+
+export type ServerExtensionInspectInput = {
+  readonly sourceUrlOrPath: string
+  readonly subpath?: string | undefined
+  readonly ref?: string | undefined
+}
+export type ServerExtensionInspectOutput = {
+  readonly source: {
+    readonly type: "git" | "local" | "archive" | "builtin"
+    readonly location: string
+    readonly subpath?: string | undefined
+    readonly ref?: string | undefined
+    readonly checksum?: string | undefined
+  }
+  readonly primaryPlatform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+  readonly manifest?: { readonly [x: string]: unknown } | undefined
+  readonly components: ReadonlyArray<{
+    readonly id: string
+    readonly name: string
+    readonly version: string
+    readonly category: "skill" | "mcp" | "rule" | "plugin"
+    readonly originPlatform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+    readonly source: {
+      readonly type: "git" | "local" | "archive" | "builtin"
+      readonly location: string
+      readonly subpath?: string | undefined
+      readonly ref?: string | undefined
+      readonly checksum?: string | undefined
+    }
+    readonly scope: "global" | "project"
+    readonly description?: string | undefined
+    readonly author?: string | undefined
+    readonly license?: string | undefined
+    readonly homepage?: string | undefined
+    readonly permissions: {
+      readonly filesystem?: ReadonlyArray<string> | undefined
+      readonly network?: ReadonlyArray<string> | undefined
+      readonly commands?: ReadonlyArray<string> | undefined
+      readonly environment?: ReadonlyArray<string> | undefined
+    }
+    readonly status:
+      | "installed"
+      | "enabled"
+      | "disabled"
+      | "failed"
+      | "needs_auth"
+      | "adapted"
+      | "incompatible"
+      | "quarantined"
+    readonly enabled: boolean
+    readonly executionMode?: ("native" | "adapted" | "shim" | "sandboxed") | undefined
+    readonly packageId?: string | undefined
+    readonly entrypoints?: ReadonlyArray<string> | undefined
+    readonly dependencies?: ReadonlyArray<string> | undefined
+    readonly requiredApis?: ReadonlyArray<string> | undefined
+    readonly hooks?: ReadonlyArray<string> | undefined
+    readonly supportingResources?: ReadonlyArray<string> | undefined
+    readonly adapterVersion?: string | undefined
+    readonly tools?:
+      | ReadonlyArray<{
+          readonly name: string
+          readonly description?: string | undefined
+          readonly parameters?: { readonly [x: string]: unknown } | undefined
+        }>
+      | undefined
+    readonly security?:
+      | {
+          readonly safe: boolean
+          readonly riskLevel: "low" | "medium" | "high" | "critical"
+          readonly findings: ReadonlyArray<{
+            readonly severity: "info" | "warning" | "error" | "critical"
+            readonly code: string
+            readonly message: string
+            readonly file?: string | undefined
+            readonly line?: number | undefined
+          }>
+          readonly scannedFiles: number
+          readonly timestamp: number
+        }
+      | undefined
+    readonly metadata: { readonly [x: string]: unknown }
+    readonly error?: string | undefined
+  }>
+  readonly security: {
+    readonly safe: boolean
+    readonly riskLevel: "low" | "medium" | "high" | "critical"
+    readonly findings: ReadonlyArray<{
+      readonly severity: "info" | "warning" | "error" | "critical"
+      readonly code: string
+      readonly message: string
+      readonly file?: string | undefined
+      readonly line?: number | undefined
+    }>
+    readonly scannedFiles: number
+    readonly timestamp: number
+  }
+}
+export type ServerExtensionInspectOperation<E = never> = (
+  input: ServerExtensionInspectInput,
+) => Effect.Effect<ServerExtensionInspectOutput, E>
+
+export type ServerExtensionProposeAdapterInput = {
+  readonly cir: {
+    readonly id: string
+    readonly name: string
+    readonly version: string
+    readonly category: "skill" | "mcp" | "rule" | "plugin"
+    readonly originPlatform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+    readonly source: {
+      readonly type: "git" | "local" | "archive" | "builtin"
+      readonly location: string
+      readonly subpath?: string | undefined
+      readonly ref?: string | undefined
+      readonly checksum?: string | undefined
+    }
+    readonly scope: "global" | "project"
+    readonly description?: string | undefined
+    readonly author?: string | undefined
+    readonly license?: string | undefined
+    readonly homepage?: string | undefined
+    readonly permissions: {
+      readonly filesystem?: ReadonlyArray<string> | undefined
+      readonly network?: ReadonlyArray<string> | undefined
+      readonly commands?: ReadonlyArray<string> | undefined
+      readonly environment?: ReadonlyArray<string> | undefined
+    }
+    readonly status:
+      | "installed"
+      | "enabled"
+      | "disabled"
+      | "failed"
+      | "needs_auth"
+      | "adapted"
+      | "incompatible"
+      | "quarantined"
+    readonly enabled: boolean
+    readonly executionMode?: ("native" | "adapted" | "shim" | "sandboxed") | undefined
+    readonly packageId?: string | undefined
+    readonly entrypoints?: ReadonlyArray<string> | undefined
+    readonly dependencies?: ReadonlyArray<string> | undefined
+    readonly requiredApis?: ReadonlyArray<string> | undefined
+    readonly hooks?: ReadonlyArray<string> | undefined
+    readonly supportingResources?: ReadonlyArray<string> | undefined
+    readonly adapterVersion?: string | undefined
+    readonly tools?:
+      | ReadonlyArray<{
+          readonly name: string
+          readonly description?: string | undefined
+          readonly parameters?: { readonly [x: string]: unknown } | undefined
+        }>
+      | undefined
+    readonly security?:
+      | {
+          readonly safe: boolean
+          readonly riskLevel: "low" | "medium" | "high" | "critical"
+          readonly findings: ReadonlyArray<{
+            readonly severity: "info" | "warning" | "error" | "critical"
+            readonly code: string
+            readonly message: string
+            readonly file?: string | undefined
+            readonly line?: number | undefined
+          }>
+          readonly scannedFiles: number
+          readonly timestamp: number
+        }
+      | undefined
+    readonly metadata: { readonly [x: string]: unknown }
+    readonly error?: string | undefined
+  }
+}
+export type ServerExtensionProposeAdapterOutput = {
+  readonly extensionId: string
+  readonly platform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+  readonly category: "skill" | "mcp" | "rule" | "plugin"
+  readonly compatible: boolean
+  readonly compatibilityScore: number
+  readonly nativeCapabilities: ReadonlyArray<string>
+  readonly mappableCapabilities: ReadonlyArray<{
+    readonly capability: string
+    readonly targetApi: string
+    readonly adapterStrategy: string
+  }>
+  readonly missingCapabilities: ReadonlyArray<string>
+  readonly generatedAdapterCode?: string | undefined
+  readonly generatedTests?: string | undefined
+  readonly validationStatus: "passed" | "failed" | "untested"
+  readonly validationErrors?: ReadonlyArray<string> | undefined
+  readonly requiresApproval: boolean
+}
+export type ServerExtensionProposeAdapterOperation<E = never> = (
+  input: ServerExtensionProposeAdapterInput,
+) => Effect.Effect<ServerExtensionProposeAdapterOutput, E>
+
+export type ServerExtensionInstallInput = {
+  readonly sourceUrlOrPath: string
+  readonly subpath?: string | undefined
+  readonly ref?: string | undefined
+  readonly targetScope: "global" | "project"
+  readonly expectedCategory?: ("skill" | "mcp" | "rule" | "plugin") | undefined
+  readonly overrideName?: string | undefined
+}
+export type ServerExtensionInstallOutput = {
+  readonly id: string
+  readonly name: string
+  readonly version: string
+  readonly category: "skill" | "mcp" | "rule" | "plugin"
+  readonly originPlatform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+  readonly source: {
+    readonly type: "git" | "local" | "archive" | "builtin"
+    readonly location: string
+    readonly subpath?: string | undefined
+    readonly ref?: string | undefined
+    readonly checksum?: string | undefined
+  }
+  readonly scope: "global" | "project"
+  readonly description?: string | undefined
+  readonly author?: string | undefined
+  readonly license?: string | undefined
+  readonly homepage?: string | undefined
+  readonly permissions: {
+    readonly filesystem?: ReadonlyArray<string> | undefined
+    readonly network?: ReadonlyArray<string> | undefined
+    readonly commands?: ReadonlyArray<string> | undefined
+    readonly environment?: ReadonlyArray<string> | undefined
+  }
+  readonly status:
+    | "installed"
+    | "enabled"
+    | "disabled"
+    | "failed"
+    | "needs_auth"
+    | "adapted"
+    | "incompatible"
+    | "quarantined"
+  readonly enabled: boolean
+  readonly executionMode?: ("native" | "adapted" | "shim" | "sandboxed") | undefined
+  readonly packageId?: string | undefined
+  readonly entrypoints?: ReadonlyArray<string> | undefined
+  readonly dependencies?: ReadonlyArray<string> | undefined
+  readonly requiredApis?: ReadonlyArray<string> | undefined
+  readonly hooks?: ReadonlyArray<string> | undefined
+  readonly supportingResources?: ReadonlyArray<string> | undefined
+  readonly adapterVersion?: string | undefined
+  readonly tools?:
+    | ReadonlyArray<{
+        readonly name: string
+        readonly description?: string | undefined
+        readonly parameters?: { readonly [x: string]: unknown } | undefined
+      }>
+    | undefined
+  readonly security?:
+    | {
+        readonly safe: boolean
+        readonly riskLevel: "low" | "medium" | "high" | "critical"
+        readonly findings: ReadonlyArray<{
+          readonly severity: "info" | "warning" | "error" | "critical"
+          readonly code: string
+          readonly message: string
+          readonly file?: string | undefined
+          readonly line?: number | undefined
+        }>
+        readonly scannedFiles: number
+        readonly timestamp: number
+      }
+    | undefined
+  readonly metadata: { readonly [x: string]: unknown }
+  readonly error?: string | undefined
+}
+export type ServerExtensionInstallOperation<E = never> = (
+  input: ServerExtensionInstallInput,
+) => Effect.Effect<ServerExtensionInstallOutput, E>
+
+export type ServerExtensionToggleInput = { readonly id: string; readonly enabled: boolean }
+export type ServerExtensionToggleOutput =
+  | {
+      readonly id: string
+      readonly name: string
+      readonly version: string
+      readonly category: "skill" | "mcp" | "rule" | "plugin"
+      readonly originPlatform: "opencode" | "claude" | "codex" | "antigravity" | "cursor" | "custom"
+      readonly source: {
+        readonly type: "git" | "local" | "archive" | "builtin"
+        readonly location: string
+        readonly subpath?: string | undefined
+        readonly ref?: string | undefined
+        readonly checksum?: string | undefined
+      }
+      readonly scope: "global" | "project"
+      readonly description?: string | undefined
+      readonly author?: string | undefined
+      readonly license?: string | undefined
+      readonly homepage?: string | undefined
+      readonly permissions: {
+        readonly filesystem?: ReadonlyArray<string> | undefined
+        readonly network?: ReadonlyArray<string> | undefined
+        readonly commands?: ReadonlyArray<string> | undefined
+        readonly environment?: ReadonlyArray<string> | undefined
+      }
+      readonly status:
+        | "installed"
+        | "enabled"
+        | "disabled"
+        | "failed"
+        | "needs_auth"
+        | "adapted"
+        | "incompatible"
+        | "quarantined"
+      readonly enabled: boolean
+      readonly executionMode?: ("native" | "adapted" | "shim" | "sandboxed") | undefined
+      readonly packageId?: string | undefined
+      readonly entrypoints?: ReadonlyArray<string> | undefined
+      readonly dependencies?: ReadonlyArray<string> | undefined
+      readonly requiredApis?: ReadonlyArray<string> | undefined
+      readonly hooks?: ReadonlyArray<string> | undefined
+      readonly supportingResources?: ReadonlyArray<string> | undefined
+      readonly adapterVersion?: string | undefined
+      readonly tools?:
+        | ReadonlyArray<{
+            readonly name: string
+            readonly description?: string | undefined
+            readonly parameters?: { readonly [x: string]: unknown } | undefined
+          }>
+        | undefined
+      readonly security?:
+        | {
+            readonly safe: boolean
+            readonly riskLevel: "low" | "medium" | "high" | "critical"
+            readonly findings: ReadonlyArray<{
+              readonly severity: "info" | "warning" | "error" | "critical"
+              readonly code: string
+              readonly message: string
+              readonly file?: string | undefined
+              readonly line?: number | undefined
+            }>
+            readonly scannedFiles: number
+            readonly timestamp: number
+          }
+        | undefined
+      readonly metadata: { readonly [x: string]: unknown }
+      readonly error?: string | undefined
+    }
+  | undefined
+export type ServerExtensionToggleOperation<E = never> = (
+  input: ServerExtensionToggleInput,
+) => Effect.Effect<ServerExtensionToggleOutput, E>
+
+export type ServerExtensionRollbackInput = { readonly id: string; readonly targetVersion: string }
+export type ServerExtensionRollbackOutput =
+  | {
+      readonly id: string
+      readonly extensionId: string
+      readonly previousVersion: string
+      readonly targetVersion: string
+      readonly timestamp: number
+      readonly reason: string
+    }
+  | undefined
+export type ServerExtensionRollbackOperation<E = never> = (
+  input: ServerExtensionRollbackInput,
+) => Effect.Effect<ServerExtensionRollbackOutput, E>
+
+export type ServerExtensionRemoveInput = { readonly id: string }
+export type ServerExtensionRemoveOutput = boolean
+export type ServerExtensionRemoveOperation<E = never> = (
+  input: ServerExtensionRemoveInput,
+) => Effect.Effect<ServerExtensionRemoveOutput, E>
+
+export type ServerExtensionMcpTestInput = { readonly name: string; readonly config: Mcp.LocalConfig | Mcp.RemoteConfig }
+export type ServerExtensionMcpTestOutput = {
+  readonly server: string
+  readonly transport: "stdio" | "http" | "sse"
+  readonly success: boolean
+  readonly latencyMs: number
+  readonly tools: ReadonlyArray<{
+    readonly name: string
+    readonly description?: string | undefined
+    readonly parameters?: { readonly [x: string]: unknown } | undefined
+  }>
+  readonly error?: string | undefined
+  readonly details: {
+    readonly executableFound: boolean
+    readonly exitCode?: number | undefined
+    readonly stderr?: string | undefined
+    readonly authValid?: boolean | undefined
+  }
+}
+export type ServerExtensionMcpTestOperation<E = never> = (
+  input: ServerExtensionMcpTestInput,
+) => Effect.Effect<ServerExtensionMcpTestOutput, E>
+
+export interface ServerExtensionApi<E = never> {
+  readonly list: ServerExtensionListOperation<E>
+  readonly inspect: ServerExtensionInspectOperation<E>
+  readonly proposeAdapter: ServerExtensionProposeAdapterOperation<E>
+  readonly install: ServerExtensionInstallOperation<E>
+  readonly toggle: ServerExtensionToggleOperation<E>
+  readonly rollback: ServerExtensionRollbackOperation<E>
+  readonly remove: ServerExtensionRemoveOperation<E>
+  readonly mcp: { readonly test: ServerExtensionMcpTestOperation<E> }
 }
 
 export type FormListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
@@ -3037,6 +3633,7 @@ export interface AppApi<E = never> {
   readonly mcp: McpApi<E>
   readonly credential: CredentialApi<E>
   readonly project: ProjectApi<E>
+  readonly "server.extension": ServerExtensionApi<E>
   readonly form: FormApi<E>
   readonly permission: PermissionApi<E>
   readonly file: FileApi<E>

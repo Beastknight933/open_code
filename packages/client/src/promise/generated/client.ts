@@ -171,8 +171,39 @@ import type {
   CredentialRemoveOutput,
   ProjectListInput,
   ProjectListOutput,
+  ProjectCreateInput,
+  ProjectCreateOutput,
   ProjectUpdateInput,
   ProjectUpdateOutput,
+  ProjectDeleteInput,
+  ProjectDeleteOutput,
+  ProjectFoldersListInput,
+  ProjectFoldersListOutput,
+  ProjectFoldersAddInput,
+  ProjectFoldersAddOutput,
+  ProjectFoldersRemoveInput,
+  ProjectFoldersRemoveOutput,
+  ProjectAttachmentsListInput,
+  ProjectAttachmentsListOutput,
+  ProjectAttachmentsAddInput,
+  ProjectAttachmentsAddOutput,
+  ProjectConversationsListInput,
+  ProjectConversationsListOutput,
+  ServerExtensionListOutput,
+  ServerExtensionInspectInput,
+  ServerExtensionInspectOutput,
+  ServerExtensionProposeAdapterInput,
+  ServerExtensionProposeAdapterOutput,
+  ServerExtensionInstallInput,
+  ServerExtensionInstallOutput,
+  ServerExtensionToggleInput,
+  ServerExtensionToggleOutput,
+  ServerExtensionRollbackInput,
+  ServerExtensionRollbackOutput,
+  ServerExtensionRemoveInput,
+  ServerExtensionRemoveOutput,
+  ServerExtensionMcpTestInput,
+  ServerExtensionMcpTestOutput,
   FormListInput,
   FormListOutput,
   PermissionRequestListInput,
@@ -2036,6 +2067,23 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      create: (input: ProjectCreateInput, requestOptions?: RequestOptions) =>
+        request<ProjectCreateOutput>(
+          {
+            method: "POST",
+            path: `/api/project`,
+            body: {
+              name: input["name"],
+              directory: input["directory"],
+              commands: input["commands"],
+              icon: input["icon"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
       update: (input: ProjectUpdateInput, requestOptions?: RequestOptions) =>
         request<ProjectUpdateOutput>(
           {
@@ -2053,6 +2101,191 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      delete: (input: ProjectDeleteInput, requestOptions?: RequestOptions) =>
+        request<ProjectDeleteOutput>(
+          {
+            method: "DELETE",
+            path: `/api/project/${encodeURIComponent(input.projectID)}`,
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      folders: {
+        list: (input: ProjectFoldersListInput, requestOptions?: RequestOptions) =>
+          request<ProjectFoldersListOutput>(
+            {
+              method: "GET",
+              path: `/api/project/${encodeURIComponent(input.projectID)}/folders`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        add: (input: ProjectFoldersAddInput, requestOptions?: RequestOptions) =>
+          request<ProjectFoldersAddOutput>(
+            {
+              method: "POST",
+              path: `/api/project/${encodeURIComponent(input.projectID)}/folders`,
+              body: { directory: input["directory"], name: input["name"], isPrimary: input["isPrimary"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        remove: (input: ProjectFoldersRemoveInput, requestOptions?: RequestOptions) =>
+          request<ProjectFoldersRemoveOutput>(
+            {
+              method: "DELETE",
+              path: `/api/project/${encodeURIComponent(input.projectID)}/folders`,
+              body: { directory: input["directory"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      attachments: {
+        list: (input: ProjectAttachmentsListInput, requestOptions?: RequestOptions) =>
+          request<ProjectAttachmentsListOutput>(
+            {
+              method: "GET",
+              path: `/api/project/${encodeURIComponent(input.projectID)}/attachments`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+        add: (input: ProjectAttachmentsAddInput, requestOptions?: RequestOptions) =>
+          request<ProjectAttachmentsAddOutput>(
+            {
+              method: "POST",
+              path: `/api/project/${encodeURIComponent(input.projectID)}/attachments`,
+              body: { name: input["name"], filePath: input["filePath"], mimeType: input["mimeType"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      conversations: {
+        list: (input: ProjectConversationsListInput, requestOptions?: RequestOptions) =>
+          request<ProjectConversationsListOutput>(
+            {
+              method: "GET",
+              path: `/api/project/${encodeURIComponent(input.projectID)}/conversations`,
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+    },
+    "server.extension": {
+      list: (requestOptions?: RequestOptions) =>
+        request<ServerExtensionListOutput>(
+          { method: "GET", path: `/api/extension`, successStatus: 200, declaredStatuses: [400, 401], empty: false },
+          requestOptions,
+        ),
+      inspect: (input: ServerExtensionInspectInput, requestOptions?: RequestOptions) =>
+        request<ServerExtensionInspectOutput>(
+          {
+            method: "POST",
+            path: `/api/extension/inspect`,
+            body: { sourceUrlOrPath: input["sourceUrlOrPath"], subpath: input["subpath"], ref: input["ref"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      proposeAdapter: (input: ServerExtensionProposeAdapterInput, requestOptions?: RequestOptions) =>
+        request<ServerExtensionProposeAdapterOutput>(
+          {
+            method: "POST",
+            path: `/api/extension/adapter/propose`,
+            body: { cir: input["cir"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      install: (input: ServerExtensionInstallInput, requestOptions?: RequestOptions) =>
+        request<ServerExtensionInstallOutput>(
+          {
+            method: "POST",
+            path: `/api/extension/install`,
+            body: {
+              sourceUrlOrPath: input["sourceUrlOrPath"],
+              subpath: input["subpath"],
+              ref: input["ref"],
+              targetScope: input["targetScope"],
+              expectedCategory: input["expectedCategory"],
+              overrideName: input["overrideName"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      toggle: (input: ServerExtensionToggleInput, requestOptions?: RequestOptions) =>
+        request<ServerExtensionToggleOutput>(
+          {
+            method: "POST",
+            path: `/api/extension/${encodeURIComponent(input.id)}/toggle`,
+            body: { enabled: input["enabled"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      rollback: (input: ServerExtensionRollbackInput, requestOptions?: RequestOptions) =>
+        request<ServerExtensionRollbackOutput>(
+          {
+            method: "POST",
+            path: `/api/extension/${encodeURIComponent(input.id)}/rollback`,
+            body: { targetVersion: input["targetVersion"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      remove: (input: ServerExtensionRemoveInput, requestOptions?: RequestOptions) =>
+        request<ServerExtensionRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/extension/${encodeURIComponent(input.id)}`,
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      mcp: {
+        test: (input: ServerExtensionMcpTestInput, requestOptions?: RequestOptions) =>
+          request<ServerExtensionMcpTestOutput>(
+            {
+              method: "POST",
+              path: `/api/extension/mcp/test`,
+              body: { name: input["name"], config: input["config"] },
+              successStatus: 200,
+              declaredStatuses: [400, 401],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
     },
     form: {
       list: (input?: FormListInput, requestOptions?: RequestOptions) =>
