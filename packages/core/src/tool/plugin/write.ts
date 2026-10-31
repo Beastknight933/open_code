@@ -92,7 +92,11 @@ export const Plugin = {
               return result
             }).pipe(
               Effect.map((output) => ({ output, content: toModelContent(output) })),
-              Effect.mapError((error) => new ToolFailure({ message: `Unable to write ${input.path}`, error })),
+              Effect.mapError((error) =>
+                error instanceof ToolFailure
+                  ? error
+                  : new ToolFailure({ message: `Unable to write ${input.path}`, error }),
+              ),
             ),
         }),
       )

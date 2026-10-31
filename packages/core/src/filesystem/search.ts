@@ -2,14 +2,16 @@ export * as FileSystemSearch from "./search.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import path from "path"
-import { Clock, Context, Deferred, Duration, Effect, Layer, Scope } from "effect"
+import { Clock, Context, Deferred, Duration, Effect, Layer, Option, Scope } from "effect"
 import { Fff } from "#fff"
 import fuzzysort from "fuzzysort"
+import { FSUtil } from "@opencode/util/fs-util"
 import { FileSystem } from "@opencode/schema/filesystem"
 import { Location } from "../location.js"
 import { Ripgrep } from "../ripgrep.js"
 import { RelativePath } from "../schema.js"
 import { Protected } from "./protected.js"
+import { MultiFolderWorkspace } from "../workspace-manager/multi-folder.js"
 
 export interface Interface {
   readonly find: (input: FileSystem.FindInput) => Effect.Effect<FileSystem.Entry[]>
@@ -56,6 +58,7 @@ const ripgrepLayer = Layer.effect(
     const ripgrep = yield* Ripgrep.Service
     const scope = yield* Scope.Scope
     const clock = yield* Clock.Clock
+    const mfwOption = yield* Effect.serviceOption(MultiFolderWorkspace.Service)
     const home = Protected.isHome(location.directory)
     let index = emptyIndex()
     let initialized = false
@@ -65,22 +68,42 @@ const ripgrepLayer = Layer.effect(
       const next = emptyIndex()
       const previous = index
       if (!initialized) index = next
-      yield* ripgrep.find({
-        cwd: location.directory,
-        pattern: "*",
-        limit: location.vcs && !home ? Number.MAX_SAFE_INTEGER : 100_000,
-        exclude: home ? [...Protected.names()].map((name) => `${name}/**`) : undefined,
-        onEntry: (entry) =>
-          Effect.sync(() => {
-            next.files.set(entry.path, previous.files.get(entry.path) ?? fuzzysort.prepare(entry.path))
-            const parts = entry.path.split("/")
-            parts.slice(0, -1).forEach((_, offset) => {
-              const directory = parts.slice(0, offset + 1).join("/") + path.sep
-              if (!next.directories.has(directory))
-                next.directories.set(directory, previous.directories.get(directory) ?? fuzzysort.prepare(directory))
-            })
-          }),
-      })
+
+      const folders = Option.isSome(mfwOption)
+        ? yield* mfwOption.value.listFolders(location.project.id).pipe(Effect.orElseSucceed(() => []))
+        : []
+      const activeFolders = folders.filter((f) => f.status === "active")
+      const searchFolders =
+        activeFolders.length > 1
+          ? activeFolders.filter(
+              (cand) => !activeFolders.some((other) => other !== cand && FSUtil.contains(other.path, cand.path)),
+            )
+          : [{ path: location.directory, isPrimary: true, name: path.basename(location.directory) }]
+
+      for (const folder of searchFolders) {
+        const isPrimary = folder.isPrimary
+        const prefix = isPrimary ? "" : `${folder.name}/`
+        yield* ripgrep
+          .find({
+            cwd: folder.path,
+            pattern: "*",
+            limit: location.vcs && !home ? Number.MAX_SAFE_INTEGER : 100_000,
+            exclude: home ? [...Protected.names()].map((name) => `${name}/**`) : undefined,
+            onEntry: (entry) =>
+              Effect.sync(() => {
+                const fullPath = prefix ? `${prefix}${entry.path}` : entry.path
+                next.files.set(fullPath, previous.files.get(fullPath) ?? fuzzysort.prepare(fullPath))
+                const parts = fullPath.split("/")
+                parts.slice(0, -1).forEach((_, offset) => {
+                  const directory = parts.slice(0, offset + 1).join("/") + path.sep
+                  if (!next.directories.has(directory))
+                    next.directories.set(directory, previous.directories.get(directory) ?? fuzzysort.prepare(directory))
+                })
+              }),
+          })
+          .pipe(Effect.orElseSucceed(() => undefined))
+      }
+
       index = next
       initialized = true
     }).pipe(Effect.orDie)

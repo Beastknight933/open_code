@@ -14,7 +14,7 @@ import { Effect, Schema } from "effect"
 import { Environment } from "../../environment/index.js"
 import { FileMutation } from "../../file-mutation.js"
 import { Formatter } from "../../formatter.js"
-import { Location } from "../../location.js"
+
 import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
 import { fileDiff } from "./file-diff.js"
@@ -264,7 +264,7 @@ export const Plugin = {
     const fileMutation = yield* FileMutation.Service
     const environment = yield* Environment.Service
     const formatter = yield* Formatter.Service
-    const location = yield* Location.Service
+
     const permission = yield* Permission.Service
 
     yield* ctx.tool
@@ -297,7 +297,9 @@ export const Plugin = {
               const target = yield* access.resolve({ path: input.path, kind: "file" })
               yield* access.authorizeExternal([target], context)
 
-              const original = yield* FileMutation.readText(environment.files, target.absolute).pipe(
+              return yield* fileMutation.withLock([target.absolute])(
+                Effect.gen(function* () {
+                  const original = yield* FileMutation.readText(environment.files, target.absolute).pipe(
                 Effect.catchTag("Environment.NotFound", () =>
                   Effect.fail(new ToolFailure({ message: `File not found: ${input.path}` })),
                 ),
@@ -373,9 +375,11 @@ export const Plugin = {
               return {
                 files: [fileDiff(result.resource, source, formatted)],
                 replacements,
-              } satisfies Output
+                  } satisfies Output
+                }),
+              )
             }).pipe(
-              fileMutation.withLock([FileAccess.resolvePath(location.directory, input.path)]),
+
               Effect.map((output) => ({
                 output,
                 content: `Edited ${output.files[0]?.file} (${output.replacements} replacement${output.replacements === 1 ? "" : "s"})`,

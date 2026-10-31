@@ -33,14 +33,14 @@ graph TD
 
 ### Stage 1 — Foundation & Runtime Integrity
 
-#### Task 1.1: Git Safety & Auxiliary Remote Cleanup
+#### Task 1.1: Git Safety & Auxiliary Remote Cleanup [COMPLETED]
 - **Priority**: P0 (Immediate)
-- **Current State**: Auxiliary remote `opencode` points to local directory `c:\Users\gaumi\Documents\GitHub\opencode`.
+- **Current State**: Completed. Auxiliary remote `opencode` removed. Only `origin` (`https://github.com/Beastknight933/open_code.git`) is configured for fetch and push.
 - **Required Work**: Remove local upstream remote `opencode` or configure strict push-blocking to prevent accidental upstream pushes.
 - **Dependencies**: None.
 - **Relevant Files**: `.git/config`
 - **Acceptance Criteria**: Only `origin` (`https://github.com/Beastknight933/open_code.git`) is configured for push.
-- **Tests Required**: `git remote -v` verification.
+- **Tests Required**: `git remote -v` verification (verified: only `origin` present).
 
 #### Task 1.2: Continuous Regression Guard & Pre-Push Hook
 - **Priority**: P0
@@ -55,21 +55,28 @@ graph TD
 
 ### Stage 2 — Core Platform Capabilities & Multi-Root VFS
 
-#### Task 2.1: Multi-Root Workspace VFS Path Resolution in File Tools
+#### Task 2.1: Multi-Root Workspace VFS Path Resolution in File Tools [COMPLETED]
 - **Priority**: P0 (Critical Path)
-- **Current State**: `MultiFolderWorkspace` manages secondary roots in `.opencode/workspace.json`, but native file tools (`read`, `write`, `edit`, `patch`, `glob`, `grep`) only resolve against `location.directory`.
-- **Required Work**:
-  1. Update [`packages/core/src/file-access.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/file-access.ts) and [`packages/core/src/filesystem/search.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/filesystem/search.ts) to consult `MultiFolderWorkspace.listFolders(projectID)`.
-  2. Implement fallback path resolution: if a relative path is not found in the primary root, resolve across secondary attached folders in added order.
-  3. Update `glob` and `grep` tools to search across all attached workspace roots when requested.
+- **Current State**: Completed. Integrated `MultiFolderWorkspace` across `file-access.ts`, `read`, `write`, `edit`, `patch`, `glob`, `grep`, and fuzzy search `search.ts`. Full backwards compatibility preserved for single-root workspaces.
+- **Completed Work**:
+  1. Updated [`packages/core/src/file-access.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/file-access.ts) to consult `MultiFolderWorkspace.listFolders(projectID)`.
+  2. Implemented deterministic path resolution with ambiguity detection: unique relative paths resolve across secondary folders; duplicate paths trigger structured ambiguity error with root-qualified candidates (`<folderName>/<subpath>`).
+  3. Added root traversal (`../` escape) and symlink escape guards against unauthorized directory access.
+  4. Updated [`packages/core/src/tool/plugin/read.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/read.ts), [`packages/core/src/tool/plugin/write.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/write.ts), [`packages/core/src/tool/plugin/edit.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/edit.ts), and [`packages/core/src/tool/plugin/patch.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/patch.ts) to respect target folder boundaries and transaction locks.
+  5. Updated [`packages/core/src/tool/plugin/glob.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/glob.ts), [`packages/core/src/tool/plugin/grep.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/grep.ts), and [`packages/core/src/filesystem/search.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/filesystem/search.ts) to search across all attached workspace roots with deduplication, detached folder tolerance, and root qualification for secondary results.
 - **Dependencies**: Stage 1.
 - **Relevant Files**:
   - `packages/core/src/file-access.ts`
   - `packages/core/src/tool/plugin/read.ts`
   - `packages/core/src/tool/plugin/write.ts`
+  - `packages/core/src/tool/plugin/edit.ts`
+  - `packages/core/src/tool/plugin/patch.ts`
+  - `packages/core/src/tool/plugin/glob.ts`
+  - `packages/core/src/tool/plugin/grep.ts`
   - `packages/core/src/filesystem/search.ts`
-- **Acceptance Criteria**: Agent calling `read_file` or `grep` with relative paths targeting files in an attached secondary directory succeeds without requiring manual absolute paths.
-- **Tests Required**: Integration test in `packages/core/test/workspace-manager/multi-folder-vfs.test.ts`.
+  - `packages/core/test/workspace-manager/multi-root-vfs.test.ts`
+- **Acceptance Criteria**: Agent calling `read_file`, `write`, `edit`, `patch`, `glob`, or `grep` targeting files in attached secondary directories succeeds deterministically with full path safety and backward compatibility.
+- **Tests Passed**: 14/14 acceptance tests in [`packages/core/test/workspace-manager/multi-root-vfs.test.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/test/workspace-manager/multi-root-vfs.test.ts); 168/168 core tests passing; monorepo `bun run check` 35/35 tasks successful.
 
 #### Task 2.2: Project Attachments Vector/Context Enrichment
 - **Priority**: P1

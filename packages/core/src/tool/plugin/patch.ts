@@ -4,12 +4,12 @@ import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
 import { ToolFailure } from "@opencode/ai/effect"
 import { FileDiff } from "@opencode/schema/file-diff"
-import { Effect, Result, Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Bom } from "@opencode/util/bom"
 import { Environment } from "../../environment/index.js"
 import { Formatter } from "../../formatter.js"
 import { FileMutation } from "../../file-mutation.js"
-import { Location } from "../../location.js"
+
 import { FileAccess } from "../../file-access.js"
 import { Patch } from "@opencode/util/patch"
 import { Permission } from "../../permission.js"
@@ -71,7 +71,7 @@ export const Plugin = {
     const access = yield* FileAccess.Service
     const fileMutation = yield* FileMutation.Service
     const formatter = yield* Formatter.Service
-    const location = yield* Location.Service
+
     const permission = yield* Permission.Service
 
     yield* ctx.tool
@@ -85,14 +85,14 @@ export const Plugin = {
           execute: (input, context) => {
             const applied: Array<typeof Applied.Type> = []
             const parsed = Patch.parse(input.patchText)
-            const lockTargets = Result.isSuccess(parsed)
-              ? parsed.success.flatMap((hunk) => [
-                  FileAccess.resolvePath(location.directory, hunk.path),
-                  ...(hunk.type === "update" && hunk.movePath
-                    ? [FileAccess.resolvePath(location.directory, hunk.movePath)]
-                    : []),
-                ])
-              : []
+
+
+
+
+
+
+
+
             const fail = (operation: string, error: unknown) => {
               const completed = applied.map((item) => item.resource).join(", ")
               return new ToolFailure({
@@ -112,7 +112,20 @@ export const Plugin = {
               if (hunks.length === 0) {
                 return yield* new ToolFailure({ message: "patch rejected: empty patch" })
               }
-              const prepared: Prepared[] = []
+              const lockPaths = yield* Effect.forEach(hunks, (hunk) =>
+                Effect.gen(function* () {
+                  const main = yield* access.resolve({ path: hunk.path, kind: "file" })
+                  const move =
+                    hunk.type === "update" && hunk.movePath
+                      ? yield* access.resolve({ path: hunk.movePath, kind: "file" })
+                      : undefined
+                  return [main.absolute, ...(move ? [move.absolute] : [])]
+                }),
+              ).pipe(Effect.map((arrays) => arrays.flat()))
+
+              return yield* fileMutation.withLock(lockPaths)(
+                Effect.gen(function* () {
+                  const prepared: Prepared[] = []
               const updates = new Map<string, string | null>()
               const resolveTarget = Effect.fnUntraced(function* (value: string) {
                 const target = yield* access.resolve({ path: value, kind: "file" })
@@ -299,9 +312,11 @@ export const Plugin = {
                 const target = change.type === "update" && change.moveTarget ? change.moveTarget : change.target
                 return patchFile(change, formatted.get(target.absolute))
               })
-              return { applied, files }
+                  return { applied, files }
+                }),
+              )
             }).pipe(
-              fileMutation.withLock(lockTargets),
+
               Effect.map((output) => ({
                 output,
                 content: toModelContent(output),

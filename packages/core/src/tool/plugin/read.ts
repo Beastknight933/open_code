@@ -87,7 +87,8 @@ export const Plugin = {
               yield* Effect.gen(function* () {
                 if (result.target.externalDirectory !== undefined) return
                 const resolved = yield* fs.resolve(result.target.absolute)
-                const root = yield* fs.resolve(location.directory)
+                const folderRoot = result.target.folder ? result.target.folder.path : location.directory
+                const root = yield* fs.resolve(folderRoot)
                 // The Location and its ancestors are already supplied by initial instructions,
                 // even when an upward walk from elsewhere in the project cannot reach root.
                 const discovered = yield* fs.up({
