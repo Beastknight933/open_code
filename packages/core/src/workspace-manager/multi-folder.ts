@@ -346,7 +346,7 @@ export const layer = Layer.effect(
             .map((e) => ({
               name: e.name,
               path: path.join(folder.path, e.name),
-              type: e.type === "directory" ? "directory" : "file",
+              type: e.type === "Directory" ? "directory" : "file",
             }))
 
           tree.push({

@@ -135,7 +135,7 @@ export const layer = Layer.effect(
           if (skillsExists) {
             hasSkills = true
             const entries = yield* fs.readDirectoryEntries(skillsDir).pipe(Effect.orElseSucceed(() => []))
-            skillCount = entries.filter((e) => e.type === "directory").length
+            skillCount = entries.filter((e) => e.type === "Directory").length
           }
           break
         }
@@ -237,7 +237,7 @@ export const layer = Layer.effect(
 
         const entries = yield* fs.readDirectoryEntries(srcSkills).pipe(Effect.orElseSucceed(() => []))
         for (const entry of entries) {
-          if (entry.type === "directory") {
+          if (entry.type === "Directory") {
             const skillSrc = path.join(srcSkills, entry.name)
             const skillDest = path.join(targetSkills, entry.name)
             const destExists = yield* fs.existsSafe(skillDest)

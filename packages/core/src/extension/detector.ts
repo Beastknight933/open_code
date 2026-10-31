@@ -212,7 +212,7 @@ export const decomposePackage = Effect.fn("ExtensionDetector.decomposePackage")(
   if (yield* fs.exists(skillsDir).pipe(Effect.orElseSucceed(() => false))) {
     const entries = yield* fs.readDirectoryEntries(skillsDir).pipe(Effect.orElseSucceed(() => []))
     for (const entry of entries) {
-      if (entry.type === "directory") {
+      if (entry.type === "Directory") {
         const subSkillPath = path.join(skillsDir, entry.name, "SKILL.md")
         if (yield* fs.exists(subSkillPath).pipe(Effect.orElseSucceed(() => false))) {
           components.push({
