@@ -14,7 +14,7 @@ This document identifies, analyzes, and ranks the technical risks, architectural
 | :---: | :--- | :--- | :---: | :---: | :---: |
 | **RISK-01** | MCP Configuration Ingestion Disconnected from Runtime Boot | Disconnected Backend | **CRITICAL** | **HIGH** | Open |
 | **RISK-02** | External Rules Ingestion Disconnected from System Prompt | Disconnected Backend | **CRITICAL** | **HIGH** | Open |
-| **RISK-03** | Secondary Workspace Roots Invisible to Native File Tools | Incomplete Abstraction | **HIGH** | **HIGH** | Open |
+| **RISK-03** | Secondary Workspace Roots Invisible to Native File Tools | Incomplete Abstraction | **HIGH** | **HIGH** | **Resolved** |
 | **RISK-04** | Foreign Plugin Shims Without Sandboxed Execution Host | Security & Runtime | **HIGH** | **MEDIUM** | Open |
 | **RISK-05** | Production Release Binary Claims Exceeding Filesystem Reality | Documentation Gap | **MEDIUM** | **MEDIUM** | Open |
 | **RISK-06** | Auxiliary Upstream Git Remote Retention | Operational Safety | **LOW** | **HIGH** | **Resolved** |
@@ -40,11 +40,11 @@ This document identifies, analyzes, and ranks the technical risks, architectural
 
 ---
 
-### RISK-03: Secondary Workspace Roots Invisible to Native File Tools
+### RISK-03: Secondary Workspace Roots Invisible to Native File Tools [RESOLVED]
 - **Location**: [`packages/core/src/file-access.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/file-access.ts) and [`packages/core/src/tool/plugin/read.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/src/tool/plugin/read.ts)
-- **Nature of Defect**: `MultiFolderWorkspace` tracks attached roots in `.opencode/workspace.json`, and the `workspace_folder` tool lists them. However, native file tools (`read`, `write`, `edit`, `patch`, `glob`, `grep`) resolve relative paths strictly against `Location.directory` (the primary project folder).
-- **Consequence**: When working across a multi-repository project, relative file operations against secondary roots fail. The agent is forced to formulate absolute paths, which breaks portability and increases failure rates.
-- **Mitigation Strategy**: Update `FileAccess` to consult `MultiFolderWorkspace.listFolders(projectID)` and perform fallback resolution across attached roots.
+- **Nature of Defect**: `MultiFolderWorkspace` tracks attached roots in `.opencode/workspace.json`, and the `workspace_folder` tool lists them. Previously, native file tools (`read`, `write`, `edit`, `patch`, `glob`, `grep`) resolved relative paths strictly against `Location.directory` (the primary project folder).
+- **Consequence**: When working across a multi-repository project, relative file operations against secondary roots failed, forcing manual absolute paths.
+- **Resolution**: Integrated `MultiFolderWorkspace` across `FileAccess.resolve`, `search.ts`, and all six file tools with deterministic ambiguity detection, root-qualified addressing, traversal security guards, intermediate symlink verification, and 22 passing integration test scenarios.
 
 ---
 

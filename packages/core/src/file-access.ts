@@ -123,6 +123,39 @@ const layer = Layer.effect(
     const permission = yield* Permission.Service
     const mfwOption = yield* Effect.serviceOption(MultiFolderWorkspace.Service)
 
+    const checkSymlinkEscape = (
+      candidate: AbsolutePath,
+      inputPath: string,
+      folders: ReadonlyArray<ProjectWorkspace.WorkspaceFolder>,
+      worktree: string,
+      isWorktreeValid: boolean,
+    ) =>
+      Effect.gen(function* () {
+        let existing: string = candidate
+        while (existing !== path.parse(existing).root && !(yield* exists(existing))) {
+          const parent = path.dirname(existing)
+          if (parent === existing) break
+          existing = parent
+        }
+
+        const real = FSUtil.resolve(existing)
+        const isAuthorized =
+          folders.some(
+            (f) =>
+              f.status === "active" &&
+              (FSUtil.contains(f.path, real) || FSUtil.contains(FSUtil.resolve(f.path), real)),
+          ) ||
+          (isWorktreeValid && (FSUtil.contains(worktree, real) || FSUtil.contains(FSUtil.resolve(worktree), real)))
+
+        if (!isAuthorized) {
+          return yield* Effect.fail(
+            new ToolFailure({
+              message: `Access denied: path "${inputPath}" resolves through symlink to "${real}", which is outside all authorized workspace roots.`,
+            }),
+          )
+        }
+      })
+
     const resolve = Effect.fn("FileAccess.resolve")(function* (input: ResolveInput) {
       const folders = Option.isSome(mfwOption)
         ? yield* mfwOption.value.listFolders(location.project.id).pipe(Effect.orElseSucceed(() => []))
@@ -184,21 +217,7 @@ const layer = Layer.effect(
         const inWorktree = isWorktreeValid && FSUtil.contains(worktree, absolute)
 
         if (matchingFolder || inWorktree) {
-          // Symlink escape check: ensure realpath doesn't point outside all authorized workspace folders
-          const stat = yield* files.stat(absolute).pipe(Effect.orElseSucceed(() => undefined))
-          if (stat?.type === "symlink") {
-            const real = FSUtil.resolve(absolute)
-            const escapes =
-              !folders.some((f) => f.status === "active" && FSUtil.contains(f.path, real)) &&
-              !(isWorktreeValid && FSUtil.contains(worktree, real))
-            if (escapes) {
-              return yield* Effect.fail(
-                new ToolFailure({
-                  message: `Access denied: symlink "${input.path}" resolves to "${real}", which is outside all authorized workspace roots.`,
-                }),
-              )
-            }
-          }
+          yield* checkSymlinkEscape(absolute, input.path, folders, worktree, isWorktreeValid)
 
           const activeFolder = matchingFolder ?? primaryFolder
           const resource = activeFolder.isPrimary
@@ -239,6 +258,7 @@ const layer = Layer.effect(
         const inWorktree = isWorktreeValid && FSUtil.contains(worktree, lexicallyResolved)
 
         if (matchingFolder || inWorktree) {
+          yield* checkSymlinkEscape(lexicallyResolved, input.path, folders, worktree, isWorktreeValid)
           const activeFolder = matchingFolder ?? primaryFolder
           const resource = activeFolder.isPrimary
             ? slash(path.relative(activeFolder.path, lexicallyResolved) || ".")
@@ -283,7 +303,17 @@ const layer = Layer.effect(
         }
         return f.name === firstSegment || f.id === firstSegment
       }
-      const rootQualifiedFolder = folders.find(matchFolder)
+      const matchingFolders = folders.filter(matchFolder)
+      if (matchingFolders.length > 1) {
+        return yield* Effect.fail(
+          new ToolFailure({
+            message: `Ambiguous folder name "${firstSegment}" matches multiple workspace folders: ${matchingFolders
+              .map((f) => `"${f.name}" (${f.path}, id: ${f.id})`)
+              .join(", ")}. Please use the folder ID as a prefix (e.g. "${matchingFolders[0].id}/${subpath || "."}").`,
+          }),
+        )
+      }
+      const rootQualifiedFolder = matchingFolders[0]
 
       if (rootQualifiedFolder) {
         const targetSubpath = subpath === "" ? "." : subpath
@@ -306,37 +336,43 @@ const layer = Layer.effect(
           )
         }
 
-        // Check collision: if not primary, does the path also exist inside primary?
+        // Check collision: if not primary, does the path or folder name also collide with a directory/file in primary?
         if (!rootQualifiedFolder.isPrimary) {
           const primaryCandidate = AbsolutePath.make(path.resolve(primaryFolder.path, normalized))
-          if (
-            FSUtil.contains(primaryFolder.path, primaryCandidate) &&
-            (yield* exists(primaryCandidate)) &&
-            (yield* exists(candidate))
-          ) {
+          const primaryPrefixCandidate = AbsolutePath.make(path.resolve(primaryFolder.path, firstSegment))
+
+          // Case A: primary root has an existing file/directory at the exact relative path
+          const primaryCandidateExists =
+            FSUtil.contains(primaryFolder.path, primaryCandidate) && (yield* exists(primaryCandidate))
+          const secondaryCandidateExists = yield* exists(candidate)
+
+          if (primaryCandidateExists && secondaryCandidateExists) {
             return yield* Effect.fail(
               new ToolFailure({
-                message: `Ambiguous path "${input.path}" matches both folder "${rootQualifiedFolder.name}" and file/directory in "${primaryFolder.name}". Please qualify explicitly.`,
+                message: `Ambiguous path "${input.path}" matches both folder "${rootQualifiedFolder.name}" and file/directory in "${primaryFolder.name}". Please qualify explicitly using "${primaryFolder.name}/${normalized}" for primary or "${rootQualifiedFolder.id}/${subpath || "."}" for secondary.`,
+              }),
+            )
+          }
+
+          // Case B: primary root has an existing directory matching firstSegment, creating collision on prospective files
+          const primaryPrefixExists =
+            FSUtil.contains(primaryFolder.path, primaryPrefixCandidate) && (yield* exists(primaryPrefixCandidate))
+          const isNameMatch =
+            process.platform === "win32"
+              ? rootQualifiedFolder.name.toLowerCase() === firstSegment.toLowerCase()
+              : rootQualifiedFolder.name === firstSegment
+
+          if (primaryPrefixExists && isNameMatch) {
+            return yield* Effect.fail(
+              new ToolFailure({
+                message: `Ambiguous path "${input.path}" matches both secondary workspace folder "${rootQualifiedFolder.name}" and existing directory in primary folder "${primaryFolder.name}". Please qualify explicitly using "${primaryFolder.name}/${normalized}" for primary or "${rootQualifiedFolder.id}/${subpath || "."}" for secondary.`,
               }),
             )
           }
         }
 
         // Symlink escape check
-        const stat = yield* files.stat(candidate).pipe(Effect.orElseSucceed(() => undefined))
-        if (stat?.type === "symlink") {
-          const real = FSUtil.resolve(candidate)
-          const escapes =
-            !folders.some((f) => f.status === "active" && FSUtil.contains(f.path, real)) &&
-            !(isWorktreeValid && FSUtil.contains(worktree, real))
-          if (escapes) {
-            return yield* Effect.fail(
-              new ToolFailure({
-                message: `Access denied: symlink "${input.path}" resolves to "${real}", which is outside all authorized workspace roots.`,
-              }),
-            )
-          }
-        }
+        yield* checkSymlinkEscape(candidate, input.path, folders, worktree, isWorktreeValid)
 
         const resource = rootQualifiedFolder.isPrimary
           ? slash(path.relative(rootQualifiedFolder.path, candidate) || ".")
@@ -380,22 +416,7 @@ const layer = Layer.effect(
       // Unique match in a single folder
       if (existingMatches.length === 1) {
         const match = existingMatches[0]
-
-        // Symlink escape check
-        const stat = yield* files.stat(match.absolute).pipe(Effect.orElseSucceed(() => undefined))
-        if (stat?.type === "symlink") {
-          const real = FSUtil.resolve(match.absolute)
-          const escapes =
-            !folders.some((f) => f.status === "active" && FSUtil.contains(f.path, real)) &&
-            !(isWorktreeValid && FSUtil.contains(worktree, real))
-          if (escapes) {
-            return yield* Effect.fail(
-              new ToolFailure({
-                message: `Access denied: symlink "${input.path}" resolves to "${real}", which is outside all authorized workspace roots.`,
-              }),
-            )
-          }
-        }
+        yield* checkSymlinkEscape(match.absolute, input.path, folders, worktree, isWorktreeValid)
 
         const resource = match.folder.isPrimary
           ? slash(path.relative(match.folder.path, match.absolute) || ".")
@@ -408,8 +429,32 @@ const layer = Layer.effect(
         } satisfies Target
       }
 
-      // File does not exist anywhere - default to primary folder (for writing new files or failing on read)
+      // File does not exist anywhere - check containment against primary folder
       const candidate = AbsolutePath.make(path.resolve(primaryFolder.path, normalized))
+      if (!FSUtil.contains(primaryFolder.path, candidate)) {
+        // Check if candidate resolves inside any other active folder or worktree
+        const matchingFolder = folders.find((f) => f.status === "active" && FSUtil.contains(f.path, candidate))
+        const inWorktree = isWorktreeValid && FSUtil.contains(worktree, candidate)
+        if (matchingFolder || inWorktree) {
+          const activeFolder = matchingFolder ?? primaryFolder
+          yield* checkSymlinkEscape(candidate, input.path, folders, worktree, isWorktreeValid)
+          return {
+            absolute: candidate,
+            resource: activeFolder.isPrimary
+              ? slash(path.relative(activeFolder.path, candidate) || ".")
+              : slash(path.join(activeFolder.name, path.relative(activeFolder.path, candidate))),
+            folder: activeFolder,
+          } satisfies Target
+        }
+        return yield* Effect.fail(
+          new ToolFailure({
+            message: `Path traversal detected: "${input.path}" escapes authorized workspace roots.`,
+          }),
+        )
+      }
+
+      yield* checkSymlinkEscape(candidate, input.path, folders, worktree, isWorktreeValid)
+
       return {
         absolute: candidate,
         resource: slash(path.relative(primaryFolder.path, candidate) || "."),

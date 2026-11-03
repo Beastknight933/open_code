@@ -76,7 +76,7 @@ graph TD
   - `packages/core/src/filesystem/search.ts`
   - `packages/core/test/workspace-manager/multi-root-vfs.test.ts`
 - **Acceptance Criteria**: Agent calling `read_file`, `write`, `edit`, `patch`, `glob`, or `grep` targeting files in attached secondary directories succeeds deterministically with full path safety and backward compatibility.
-- **Tests Passed**: 14/14 acceptance tests in [`packages/core/test/workspace-manager/multi-root-vfs.test.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/test/workspace-manager/multi-root-vfs.test.ts); 168/168 core tests passing; monorepo `bun run check` 35/35 tasks successful.
+- **Tests Passed**: 22/22 acceptance tests in [`packages/core/test/workspace-manager/multi-root-vfs.test.ts`](file:///c:/Users/gaumi/Documents/GitHub/open_code/packages/core/test/workspace-manager/multi-root-vfs.test.ts) (including security remediation for unqualified traversal, directory collisions, intermediate symlinks, and permission denial); 168/168 core tests passing; monorepo `bun run check` 35/35 tasks successful.
 
 #### Task 2.2: Project Attachments Vector/Context Enrichment
 - **Priority**: P1

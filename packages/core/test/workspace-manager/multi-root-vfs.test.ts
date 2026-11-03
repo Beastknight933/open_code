@@ -115,6 +115,7 @@ const call = (name: string, input: unknown) => ({
 function withMultiRoot(
   folders: ProjectWorkspace.WorkspaceFolder[],
   body: (exec: (tool: string, input: unknown) => Effect.Effect<any>) => Effect.Effect<void>,
+  permissionOverrides?: Partial<Permission.Interface>,
 ) {
   const primary = folders.find((f) => f.isPrimary) ?? folders[0]
   const directory = primary.path
@@ -144,6 +145,7 @@ function withMultiRoot(
           permissionLayer({
             allows: () => Effect.succeed(true),
             assert: () => Effect.void,
+            ...permissionOverrides,
           }),
         ),
       ]),
@@ -808,6 +810,465 @@ describe("Stage 2 — Task 2.1: Multi-Root Virtual Filesystem Integration", () =
       )
 
       fs.rmSync(primaryDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 15: Critical security: Unqualified traversal rejected across all file tools", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc15-p-"))
+      const secondaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc15-s-"))
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc15-out-"))
+
+      const outsideFile = path.join(outsideDir, "escape.txt")
+      fs.writeFileSync(outsideFile, "original outside content\n")
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_secondary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(secondaryDir),
+          name: "backend",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(folders, (exec) =>
+        Effect.gen(function* () {
+          // Traversal starting with non-leading directory segment
+          const maliciousPath = "nested/../../../../../../../../../../../../../../../../../../../../escape.txt"
+
+          // 1. Read
+          const readRes = yield* exec("read", { path: maliciousPath })
+          expect(readRes.status).toBe("error")
+          expect((readRes.error?.message || "").toLowerCase()).toContain("traversal")
+
+          // 2. Write
+          const writeRes = yield* exec("write", { path: maliciousPath, content: "hacked!" })
+          expect(writeRes.status).toBe("error")
+          expect((writeRes.error?.message || "").toLowerCase()).toContain("traversal")
+          // Ensure outside file was NOT modified
+          expect(fs.readFileSync(outsideFile, "utf8")).toBe("original outside content\n")
+
+          // 3. Edit
+          const editRes = yield* exec("edit", {
+            path: maliciousPath,
+            oldString: "original",
+            newString: "hacked",
+          })
+          expect(editRes.status).toBe("error")
+          expect((editRes.error?.message || "").toLowerCase()).toContain("traversal")
+          expect(fs.readFileSync(outsideFile, "utf8")).toBe("original outside content\n")
+
+          // 4. Patch
+          const patchRes = yield* exec("patch", {
+            patchText: `*** Begin Patch\n*** Update File: ${maliciousPath}\n@@\n-original\n+hacked\n*** End Patch`,
+          })
+          expect(patchRes.status).toBe("error")
+          expect((patchRes.error?.message || "").toLowerCase()).toContain("traversal")
+          expect(fs.readFileSync(outsideFile, "utf8")).toBe("original outside content\n")
+        }),
+      )
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(secondaryDir, { recursive: true, force: true })
+      fs.rmSync(outsideDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 16: Primary/secondary directory name collision on nonexistent target", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc16-p-"))
+      const secondaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc16-s-"))
+
+      // Primary has an existing subdirectory named "backend"
+      fs.mkdirSync(path.join(primaryDir, "backend"), { recursive: true })
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_secondary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(secondaryDir),
+          name: "backend",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(folders, (exec) =>
+        Effect.gen(function* () {
+          // Writing to "backend/new-file.ts" is ambiguous between primary's backend/ dir and secondary workspace folder
+          const res = yield* exec("write", { path: "backend/new-file.ts", content: "export const x = 1" })
+          expect(res.status).toBe("error")
+          const msg = res.error?.message || ""
+          expect(msg).toContain("Ambiguous path")
+          expect(msg).toContain("secondary workspace folder")
+          expect(msg).toContain("primary folder")
+
+          // Verify neither primary/backend/ nor secondaryDir has new-file.ts
+          expect(fs.existsSync(path.join(primaryDir, "backend", "new-file.ts"))).toBe(false)
+          expect(fs.existsSync(path.join(secondaryDir, "new-file.ts"))).toBe(false)
+        }),
+      )
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(secondaryDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 17: Explicit root-name addressing and folder-ID addressing resolve collision", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc17-p-"))
+      const secondaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc17-s-"))
+
+      fs.mkdirSync(path.join(primaryDir, "backend"), { recursive: true })
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_secondary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(secondaryDir),
+          name: "backend",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(folders, (exec) =>
+        Effect.gen(function* () {
+          // 1. Explicitly address primary folder: frontend/backend/new-file.ts
+          const primaryRes = yield* exec("write", {
+            path: "frontend/backend/new-file.ts",
+            content: "primary content",
+          })
+          expect(primaryRes.status).toBe("completed")
+          expect(fs.readFileSync(path.join(primaryDir, "backend", "new-file.ts"), "utf8")).toBe("primary content")
+
+          // 2. Explicitly address secondary folder by ID: f_secondary/new-file.ts
+          const secondaryRes = yield* exec("write", {
+            path: "f_secondary/new-file.ts",
+            content: "secondary content",
+          })
+          expect(secondaryRes.status).toBe("completed")
+          expect(fs.readFileSync(path.join(secondaryDir, "new-file.ts"), "utf8")).toBe("secondary content")
+        }),
+      )
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(secondaryDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 18: Duplicate folder names reject name addressing and require folder ID", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc18-p-"))
+      const sec1Dir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc18-s1-"))
+      const sec2Dir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc18-s2-"))
+
+      // Two different folders both named "shared"
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_shared_1",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(sec1Dir),
+          name: "shared",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_shared_2",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(sec2Dir),
+          name: "shared",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(folders, (exec) =>
+        Effect.gen(function* () {
+          // Using duplicate name "shared/file.ts" fails with ambiguity error
+          const res = yield* exec("write", { path: "shared/file.ts", content: "data" })
+          expect(res.status).toBe("error")
+          const msg = res.error?.message || ""
+          expect(msg).toContain("Ambiguous folder name")
+          expect(msg).toContain("f_shared_1")
+          expect(msg).toContain("f_shared_2")
+
+          // Using explicit ID succeeds
+          const res1 = yield* exec("write", { path: "f_shared_1/file.ts", content: "v1" })
+          expect(res1.status).toBe("completed")
+          expect(fs.readFileSync(path.join(sec1Dir, "file.ts"), "utf8")).toBe("v1")
+
+          const res2 = yield* exec("write", { path: "f_shared_2/file.ts", content: "v2" })
+          expect(res2.status).toBe("completed")
+          expect(fs.readFileSync(path.join(sec2Dir, "file.ts"), "utf8")).toBe("v2")
+        }),
+      )
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(sec1Dir, { recursive: true, force: true })
+      fs.rmSync(sec2Dir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 19: Windows-style backslash input paths resolve correctly", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc19-p-"))
+      const secondaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc19-s-"))
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_secondary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(secondaryDir),
+          name: "backend",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(folders, (exec) =>
+        Effect.gen(function* () {
+          // Write using backslashes
+          const writeRes = yield* exec("write", {
+            path: "backend\\src\\service.ts",
+            content: "export const ok = true",
+          })
+          expect(writeRes.status).toBe("completed")
+          expect(fs.readFileSync(path.join(secondaryDir, "src", "service.ts"), "utf8")).toBe("export const ok = true")
+
+          // Read using backslashes
+          const readRes = yield* exec("read", { path: "backend\\src\\service.ts" })
+          expect(readRes.status).toBe("completed")
+          expect(readRes.content?.[0]?.text).toContain("export const ok = true")
+        }),
+      )
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(secondaryDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 20: Permission denial for mutation in secondary root preserves file untouched", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc20-p-"))
+      const secondaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc20-s-"))
+
+      fs.writeFileSync(path.join(secondaryDir, "protected.txt"), "original protected data\n")
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_secondary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(secondaryDir),
+          name: "backend",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(
+        folders,
+        (exec) =>
+          Effect.gen(function* () {
+            const res = yield* exec("write", {
+              path: "backend/protected.txt",
+              content: "malicious overwrite",
+            })
+            expect(res.status).toBe("error")
+
+            // Verify file remained unchanged
+            expect(fs.readFileSync(path.join(secondaryDir, "protected.txt"), "utf8")).toBe(
+              "original protected data\n",
+            )
+          }),
+        {
+          allows: () => Effect.succeed(false),
+          assert: () => Effect.fail(new Permission.BlockedError({ rules: [], permission: "edit", resources: [] })),
+        },
+      )
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(secondaryDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 21: Intermediate directory symlink pointing outside workspace rejected for read & write", () =>
+    Effect.gen(function* () {
+      const primaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc21-p-"))
+      const secondaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc21-s-"))
+      const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc21-out-"))
+
+      const outsideFile = path.join(outsideDir, "secret.txt")
+      fs.writeFileSync(outsideFile, "external secret data\n")
+
+      const intermediateSymlink = path.join(secondaryDir, "linked_dir")
+      let symlinkCreated = false
+      try {
+        fs.symlinkSync(outsideDir, intermediateSymlink, "junction")
+        symlinkCreated = true
+      } catch {
+        // Windows privilege restriction
+      }
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_primary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(primaryDir),
+          name: "frontend",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_secondary",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(secondaryDir),
+          name: "backend",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      if (symlinkCreated) {
+        yield* withMultiRoot(folders, (exec) =>
+          Effect.gen(function* () {
+            // Read through intermediate directory symlink
+            const readRes = yield* exec("read", { path: "backend/linked_dir/secret.txt" })
+            expect(readRes.status).toBe("error")
+            expect((readRes.error?.message || "").toLowerCase()).toContain("symlink")
+
+            // Write through intermediate directory symlink
+            const writeRes = yield* exec("write", {
+              path: "backend/linked_dir/new_file.txt",
+              content: "should not be written",
+            })
+            expect(writeRes.status).toBe("error")
+            expect((writeRes.error?.message || "").toLowerCase()).toContain("symlink")
+            expect(fs.existsSync(path.join(outsideDir, "new_file.txt"))).toBe(false)
+          }),
+        )
+      }
+
+      fs.rmSync(primaryDir, { recursive: true, force: true })
+      fs.rmSync(secondaryDir, { recursive: true, force: true })
+      fs.rmSync(outsideDir, { recursive: true, force: true })
+    }),
+  )
+
+  it.live("Scenario 22: Nested attached workspace roots avoid duplicate search hits", () =>
+    Effect.gen(function* () {
+      const parentDir = fs.mkdtempSync(path.join(os.tmpdir(), "mr-sc22-parent-"))
+      const childDir = path.join(parentDir, "subproject")
+      fs.mkdirSync(childDir, { recursive: true })
+
+      fs.writeFileSync(path.join(parentDir, "root.ts"), "const root = 1\n")
+      fs.writeFileSync(path.join(childDir, "child.ts"), "const child = 2\n")
+
+      const folders: ProjectWorkspace.WorkspaceFolder[] = [
+        {
+          id: "f_parent",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(parentDir),
+          name: "monorepo",
+          isPrimary: true,
+          status: "active",
+          addedAt: Date.now(),
+        },
+        {
+          id: "f_child",
+          projectID: "proj_test" as any,
+          path: AbsolutePath.make(childDir),
+          name: "subproject",
+          isPrimary: false,
+          status: "active",
+          addedAt: Date.now(),
+        },
+      ]
+
+      yield* withMultiRoot(folders, (exec) =>
+        Effect.gen(function* () {
+          // Glob across workspace: nested subproject should be scanned via parent, not duplicated
+          const globRes = yield* exec("glob", { pattern: "**/*.ts" })
+          expect(globRes.status).toBe("completed")
+          const files = (globRes.output as any[]).map((e: any) => e.path.replaceAll("\\", "/"))
+          expect(files).toContain("root.ts")
+          expect(files).toContain("subproject/child.ts")
+          expect(files.filter((f) => f.includes("child.ts")).length).toBe(1)
+
+          // Grep across workspace
+          const grepRes = yield* exec("grep", { pattern: "const" })
+          expect(grepRes.status).toBe("completed")
+          const matches = grepRes.output as any[]
+          expect(matches.length).toBe(2)
+        }),
+      )
+
+      fs.rmSync(parentDir, { recursive: true, force: true })
     }),
   )
 })
